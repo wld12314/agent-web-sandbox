@@ -1,0 +1,3 @@
+- insert:
+    - id: web-sandbox
+      name: '@deepseek-ai/dsh-agent-web-sandbox'
