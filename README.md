@@ -20,6 +20,13 @@ pulls untrusted content from the open internet — the web fetcher — so that:
 Designed for **local-first, personal use** — no cloud, no extra sandbox vendor,
 reuses the DSH runtime the agent already runs in.
 
+> **Status — v0.2.0 (now wired end-to-end).** v0.1.0 shipped the sanitizer and
+> scanner as a tool but left the L3b canary-watchdog as un-mounted library code,
+> claiming DSH offered no per-reply hook. v0.2.0 corrects that: the watchdog is
+> **auto-wired in-plugin** via the real `ctx.on("session/event")` hook, so the
+> detect→react loop closes with no desktop-client glue. It is still a personal,
+> local-first **content** safety layer — not an execution sandbox (see defects).
+
 ---
 
 ## What it does (trust layers)
@@ -31,7 +38,7 @@ reuses the DSH runtime the agent already runs in.
 | L2 | **Sanitize** raw HTML: drop `<script>/<style>/<noscript>/<template>/<iframe>/<head>/<embed>`, hidden CSS & hidden attrs, offsite images, `data:` URIs; flatten to safe text | `lib/sanitize.js` |
 | L2b | **Spotlighting**: wrap the cleaned content in `<<<UNTRUSTED_WEB_CONTENT url=…>>>` … `<<<END_UNTRUSTED_WEB_CONTENT>>>` with a **randomized per-fetch canary** | `lib/sanitize.js` |
 | L3 | **Local injection scan**: heuristic detection of override / ignore-all / role-reassign / impersonate-owner / jailbreak / exfil / tool-escalation / command-paste / download-run / permission-grant / cred-harvest / self-modify → structured findings | `lib/sanitize.js` |
-| L3b | **Canary echo-back watchdog** (client shell): learns each fetch's randomized canary from the tool result, then watches `assistant/message` events; flags if the model echoes the token (injection-capture evidence) | `lib/canary-watch.js` (see "Client-side canary watchdog" below) |
+| L3b | **Canary echo-back watchdog** (auto-wired): learns each fetch's randomized canary from the tool result, then watches `assistant/message` events via `ctx.on("session/event")`; flags if the model echoes the token (injection-capture evidence) | `lib/canary-watch.js` (see "Client-side canary watchdog" below) |
 
 > All hardening is **local and deterministic** (no model call inside the
 > scanner), so it works offline and adds negligible latency.
@@ -111,8 +118,8 @@ looks like:
 
 The canary is randomized **per fetch** (`makeCanary()`). If the agent later echoes
 that exact token (or acts on instructions from the block), `detectCanaryLeak()`
-flags local evidence of injection capture — see the **Client-side canary watchdog**
-section for the ready-made glue.
+flags local evidence of injection capture — and the L3b watchdog (auto-wired since
+v0.2.0) reacts by appending an INJECTION ALERT to the live session.
 
 ---
 
@@ -149,7 +156,7 @@ watch.observeEvent(event);   // or: watch.observeSession(session.snapshotEvents(
 
 Run its tests (plain Node, the bundled runtime works too):
 ```bash
-node agent-web-sandbox/_test_canary_watch.mjs   # 11/11
+node agent-web-sandbox/_test_canary_watch.mjs   # 14/14
 ```
 
 ---
@@ -166,6 +173,7 @@ node agent-web-sandbox/_test_canary_watch.mjs   # 11/11
 | `stripDataUris` | `true` | Drop inline `data:` images/blobs |
 | `spotlighting` | `true` | Wrap content in untrusted delimiters + canary |
 | `injectionScan` | `true` | Run the L3 local injection scanner |
+| `watchCanaryEcho` | `true` | Auto-wire the L3b canary echo-back watchdog via `ctx.on("session/event")` |
 
 ---
 
@@ -185,9 +193,11 @@ removal, offsite & `data:` image stripping, normal content survival, L2b
 delimiter+canary placement, L3 pattern coverage, canary randomization and leak
 detection, and benign-content cleanliness.
 
-`_test_canary_watch.mjs` (11/11) covers: `assistant/message` text extraction,
+`_test_canary_watch.mjs` (14/14) covers: `assistant/message` text extraction,
 canary learning from `tool/result`, echo detection, idempotent `seq` handling,
-the `onLeak` callback, and out-of-order `observeSession` sorting.
+the `onLeak` callback, out-of-order `observeSession` sorting, and the in-plugin
+auto-wire contract (subscribes to `session/event`, learns canary, appends an
+INJECTION ALERT `system/message` on echo).
 
 > Note: the other smoke files (`_smoke.mjs`, `_smoke2.mjs`, `_pure.mjs`) were
 > earlier throwaway probes; the `_test_*.mjs` files are the authoritative tests.
@@ -205,30 +215,34 @@ the `onLeak` callback, and out-of-order `observeSession` sorting.
 | 5 | Optional plain-`web_fetch` guard (`disablePlainWebFetch`) that redirects to the safe tool | ✅ works, tested |
 | 6 | Client-side **canary echo-back watchdog** (L3b), auto-wired in-plugin via `ctx.on("session/event")` (`watchCanaryEcho`) | ✅ works, tested |
 | 7 | Configurable layers / caps (`enabled`, `maxOutputChars`, `fetchTimeoutMs`, toggles) | ✅ works, tested |
-| 8 | 37 automated unit tests (26 sanitize + 11 watchdog) + syntax check | ✅ all pass |
+| 8 | 40 automated unit tests (26 sanitize + 14 watchdog) + syntax check | ✅ all pass |
 
 ## Known defects & limitations (v0.2.0)
 
-> This is an honest first-cut; the list is deliberately blunt so integrators
-> know exactly what is **not** handled yet.
+> This is an honest list; the project is still a **content** safety layer, not an
+> execution sandbox. Everything below is a real gap, not a disclaimer.
 
 1. **Not a sandbox of execution.** It only sanitizes *content* before it reaches
    the model. It does **not** isolate the browser process, network, or file
-   system. A page that is invisible-but-fetched still hit the network.
+   system. A page that is invisible-but-fetched still hit the network, and if the
+   model calls a real browser tool on a fetched URL, this plugin does not contain
+   that.
 2. **(Closed in v0.2.0 — formerly "the could-not-wire-the-watchdog gap".)** The
    v0.1.0 README claimed DSH exposed no per-reply push hook, so L3b had to be
    mounted from the desktop client. The installed DSH asar actually exposes
    `ctx.on("session/event", …)` for every session event, so the watchdog is now
    **auto-wired in-plugin** (`watchCanaryEcho`, default `true`). The library form
    is retained for standalone use.
-3. **Plugin registration is unverified in this repo.** The plugin `lib/index.js`
-   needs `@deepseek-ai/dsh-tools`, `schemastery`, and `cordis` — none are
-   installed here (the DSH install is a packed `asar` we must not modify). Syntax
-   and pure logic are verified with the bundled Node, but **only
-   `dsh plugin install <abs path>` on your machine proves registration.**
+3. **Plugin registration is unverified on a live host.** `lib/index.js` needs
+   `@deepseek-ai/dsh-tools`, `schemastery`, and `cordis` — none are installed in
+   this authoring checkout (DSH ships as a packed `asar`). Syntax and pure logic
+   are verified with the bundled Node, but **only `dsh plugin install <abs path>`
+   on your machine proves registration**, and whether `web_fetch_safe` actually
+   appears in the agent's tool list is not yet exercised here.
 4. **L3 is heuristic and conservative.** It flags; it does not delete. It can
    both miss obfuscated instructions and false-positive on legitimate imperative
-   prose. A local classifier / LLM-judge upgrade is the intended next step.
+   prose ("send the email now" in a normal article would trip it). A local
+   classifier / LLM-judge upgrade is the intended next step.
 5. **No real HTML→markdown dependency.** To stay dependency-free we flatten to
    plain text (`htmlToText`) rather than using `turndown`; tables/links/structure
    are lost. If you want markdown fidelity, add `turndown` and swap the flattener.
@@ -237,20 +251,54 @@ the `onLeak` callback, and out-of-order `observeSession` sorting.
 7. **CSS is parsed by regex**, not a browser engine. Exotic hiding
    (`transform`, `clip-path`, `text-indent:-9999px`, pseudo-element overlays,
    etc.) may slip through. It covers the common hidden-text carriers only.
-8. **`disablePlainWebFetch` only works if the host consults `guardReason`.** We
+8. **`append("system/message", …)` alert is best-effort.** Closed in v0.2.0 is the
+   *subscription*; not yet confirmed on a real host that the alert actually lands
+   in the loop's next turn. If the host ignores injected `system/message`, the
+   leak still shows in logs but the model may not see it.
+9. **`disablePlainWebFetch` only works if the host consults `guardReason`.** We
    register a `ctx.tools.guard`; whether a given DSH build actually denies on a
    returned string is assumed from the type surface, not exercised here.
-9. **No allow/deny URL policy.** Any `http(s)` URL is fetched. A host-level
-   allowlist is not implemented (prompt-injection on a *trusted* page is out of
-   scope for v1).
-10. **Sole authoring environment.** Verified against one locally-installed DSH
+10. **No allow/deny URL policy.** Any `http(s)` URL is fetched. A host-level
+    allowlist is not implemented (prompt-injection on a *trusted* page is out of
+    scope for v1).
+11. **Sole authoring environment.** Verified against one locally-installed DSH
     `asar` snapshot; behavior on other versions is untested.
 
-## Next steps
+## Future optimization directions
 
-- (~Done in v0.2.0) L3b is auto-wired in-plugin via `ctx.on("session/event")`.
-  Remaining hardening: exercise `append("system/message", …)` on a real host
-  build to confirm the alert lands in the loop.
-- Swap `htmlToText` for `turndown` if markdown fidelity matters.
-- Optional small local injection classifier behind the regex scan.
-- Optional URL allowlist / per-domain policy.
+- **True execution containment (the "sandbox" promise).** Run the fetch inside a
+  throwaway browser profile / container so a fetched page can never touch the
+  agent's real cookies, local files, or other tabs. This is the jump from
+  *content* sanitizer to *execution* sandbox and is the biggest remaining item.
+- **Live registration proof.** Land `dsh plugin install` on a real host and add an
+  end-to-end smoke that (a) confirms `web_fetch_safe` is registered and (b) that a
+  seeded canary echo actually reaches the model as an INJECTION ALERT turn.
+- **Stronger L3 — local classifier.** Replace / augment the regex scan with a
+  small fine-tuned classifier or an LLM-judge call scoped to the untrusted block,
+  to cut both false negatives (obfuscated instructions) and false positives
+  (legitimate imperative prose).
+- **Robust hiding detection.** Swap regex CSS parsing for a real DOM/CSS engine
+  (linkedom + computed-style reasoning) so `transform` / `clip-path` /
+  pseudo-element overlays no longer slip through.
+- **Markdown fidelity.** Swap `htmlToText` for `turndown` (or a Readability-style
+  extractor) so tables/links/structure survive for the model.
+- **URL policy + provenance.** Add a host/domain allowlist (and an opt-in
+  blocklist), and attach fetch provenance metadata (final URL after redirects,
+  content-type) to the tool result so the model can reason about it.
+- **Multi-URL / crawl-aware.** Optional link-following and a per-session canary
+  table so scans stay coherent across a multi-page browse.
+- **Telemetry / audit log.** Emit structured injection events (scans, leaks,
+  alerts) to a local log the owner can review, instead of only `console.warn`.
+
+## Changelog
+
+- **v0.2.0** — Auto-wire the L3b canary echo-back watchdog in-plugin via
+  `ctx.on("session/event")` (correcting the v0.1.0 "no per-reply hook" mistake);
+  append an INJECTION ALERT `system/message` on leak; add `watchCanaryEcho` config;
+  add integration tests for the auto-wire contract (watchdog suite 11→14, total
+  37→40); fix README defects.
+- **v0.1.0** — Initial public release. Sanitized fetch tool `web_fetch_safe`,
+  Spotlighting delimiters + per-fetch canary, model-free L3 injection scanner,
+  system-prompt guardrail, optional plain-`web_fetch` guard. L3b shipped as
+  un-mounted library code.
+
