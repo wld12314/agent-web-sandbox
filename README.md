@@ -116,44 +116,35 @@ section for the ready-made glue.
 
 ---
 
-## Client-side canary watchdog (L3b) — how to mount it
+## Client-side canary watchdog (L3b) — now auto-wired in-plugin
 
-> **Honest scope note (verified against the installed DSH asar).** There is **no
-> per-reply push hook** the plugin can subscribe to. The agent's reply is
-> committed as a *session event* `assistant/message`
-> (`live.settle("assistant/message", () => this.session.append(...))` in
-> `dsh-agent-loop`), and `ctx.agents` is a **registry Service**, not an observer
-> (`get/list/roots/currentInitiator/withInitiator`, no `observe`). The loop's own
-> hook surface is an agent-scoped waterfall (`agentEvents(...).waterfall('agent/pre-step' | 'agent/request' | 'agent/request-error')`) that the plugin's injected
-> scope (`tools`, `web`, `systemPrompt`) does not grant. DSH's *own* projections
-> read replies via a **pull** API — `session.snapshotEvents()` /
-> `session.eventAt(seq)` / `session.surface.nodes`.
+> **Correction (v0.2.0).** The v0.1.0 README stated DSH exposes *no per-reply
+> push hook* and shipped the watchdog as a library you had to mount from the
+> desktop client. **That finding was wrong against the real asar.** The installed
+> DSH exposes `ctx.on("session/event", (session, event) => …)`, fired for every
+> session event — including `assistant/message` and `tool/result`. So the
+> watchdog is now **mounted automatically by the plugin** when
+> `watchCanaryEcho` is true (default): no client extension point needed.
 
-So the watchdog is shipped as a **self-contained library** (`lib/canary-watch.js`,
-zero `@deepseek-ai/*` imports, no network) that the **desktop client / agent-loop
-extension point** wires into the session event stream — mirroring how DSH's
-projections already read it. It is *not* installed by the plugin `ctx`.
+The watchdog library itself (`lib/canary-watch.js`, zero `@deepseek-ai/*`
+imports, no network) is still self-contained and unit-tested, so you can also
+use it standalone if you prefer to run it on the desktop-client side.
 
-### What it does
-- `CanaryWatch.observeEvent(event)` — feed every session event. It learns
-  canaries from `tool/result` (the `web_fetch_safe` return's `injectionScan.canary`)
-  and flags any `assistant/message` that echoes one.
-- `CanaryWatch.observeSession(events)` — feed a whole `session.snapshotEvents()`
-  snapshot; idempotent via `event.seq` tracking, sorts so canaries are learned
-  before replies that might echo them.
-- `onLeak` callback + `takeAlerts()` for the integrator to refuse/escalate.
+### What it does (auto-wired)
+- For every `session/event`, it learns canaries from `tool/result` (the
+  `web_fetch_safe` return's `injectionScan.canary`) and flags any
+  `assistant/message` that echoes one.
+- On a leak it `console.warn`s and appends a `system/message` injection alert
+  into the live session (so the loop and user see it on the next step). It does
+  **not** silently rewrite the reply.
 
-### Mount example (pseudo — adapt to your client's session handle)
+### Standalone use (optional)
 ```js
 import { CanaryWatch } from "agent-web-sandbox/lib/canary-watch.js";
 const watch = new CanaryWatch({ onLeak: (a) =>
-  // refuse/escalate: e.g. surface a banner, drop the turn, notify the user
   console.warn("[INJECTION CAPTURE]", a.message) });
-
-// wherever you already observe the live session (projection / loop callback):
-function onSessionEvent(event) {
-  watch.observeEvent(event);        // or: watch.observeSession(session.snapshotEvents())
-}
+// feed every session event:
+watch.observeEvent(event);   // or: watch.observeSession(session.snapshotEvents())
 ```
 
 Run its tests (plain Node, the bundled runtime works too):
@@ -203,7 +194,7 @@ the `onLeak` callback, and out-of-order `observeSession` sorting.
 
 ---
 
-## Specific features (v0.1.0)
+## Specific features (v0.2.0)
 
 | # | Feature | Status |
 |---|---------|--------|
@@ -212,11 +203,11 @@ the `onLeak` callback, and out-of-order `observeSession` sorting.
 | 3 | **Model-free prompt-injection scanner** (L3), 17 heuristic patterns, flags (never auto-obeys) | ✅ works, tested |
 | 4 | System-prompt guardrail telling the model to treat the block as data | ✅ works, tested |
 | 5 | Optional plain-`web_fetch` guard (`disablePlainWebFetch`) that redirects to the safe tool | ✅ works, tested |
-| 6 | Client-side **canary echo-back watchdog** (L3b), self-contained library | ✅ works, tested; ⚠️ must be mounted by the client (not auto-wired) |
+| 6 | Client-side **canary echo-back watchdog** (L3b), auto-wired in-plugin via `ctx.on("session/event")` (`watchCanaryEcho`) | ✅ works, tested |
 | 7 | Configurable layers / caps (`enabled`, `maxOutputChars`, `fetchTimeoutMs`, toggles) | ✅ works, tested |
 | 8 | 37 automated unit tests (26 sanitize + 11 watchdog) + syntax check | ✅ all pass |
 
-## Known defects & limitations (v0.1.0)
+## Known defects & limitations (v0.2.0)
 
 > This is an honest first-cut; the list is deliberately blunt so integrators
 > know exactly what is **not** handled yet.
@@ -224,11 +215,12 @@ the `onLeak` callback, and out-of-order `observeSession` sorting.
 1. **Not a sandbox of execution.** It only sanitizes *content* before it reaches
    the model. It does **not** isolate the browser process, network, or file
    system. A page that is invisible-but-fetched still hit the network.
-2. **The could-not-wire-the-watchdog gap.** DSH exposes **no per-reply push hook**
-   to plugins (`ctx.agents` has no `observe`; replies land as session events
-   `assistant/message`). So the L3b watchdog is shipped as a **library**
-   (`lib/canary-watch.js`) you must mount from the **desktop client / agent-loop
-   extension point**. Out of the box, in-plugin L3b does nothing on its own.
+2. **(Closed in v0.2.0 — formerly "the could-not-wire-the-watchdog gap".)** The
+   v0.1.0 README claimed DSH exposed no per-reply push hook, so L3b had to be
+   mounted from the desktop client. The installed DSH asar actually exposes
+   `ctx.on("session/event", …)` for every session event, so the watchdog is now
+   **auto-wired in-plugin** (`watchCanaryEcho`, default `true`). The library form
+   is retained for standalone use.
 3. **Plugin registration is unverified in this repo.** The plugin `lib/index.js`
    needs `@deepseek-ai/dsh-tools`, `schemastery`, and `cordis` — none are
    installed here (the DSH install is a packed `asar` we must not modify). Syntax
@@ -256,8 +248,9 @@ the `onLeak` callback, and out-of-order `observeSession` sorting.
 
 ## Next steps
 
-- Wire L3b into the desktop client's session stream (the code is ready;
-  integration is the missing half).
+- (~Done in v0.2.0) L3b is auto-wired in-plugin via `ctx.on("session/event")`.
+  Remaining hardening: exercise `append("system/message", …)` on a real host
+  build to confirm the alert lands in the loop.
 - Swap `htmlToText` for `turndown` if markdown fidelity matters.
 - Optional small local injection classifier behind the regex scan.
 - Optional URL allowlist / per-domain policy.
