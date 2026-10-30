@@ -20,7 +20,7 @@ pulls untrusted content from the open internet — the web fetcher — so that:
 Designed for **local-first, personal use** — no cloud, no extra sandbox vendor,
 reuses the DSH runtime the agent already runs in.
 
-> **Status — v0.2.0 (now wired end-to-end).** v0.1.0 shipped the sanitizer and
+> **Status — v0.2.1 (now wired end-to-end).** v0.1.0 shipped the sanitizer and
 > scanner as a tool but left the L3b canary-watchdog as un-mounted library code,
 > claiming DSH offered no per-reply hook. v0.2.0 corrects that: the watchdog is
 > **auto-wired in-plugin** via the real `ctx.on("session/event")` hook, so the
@@ -296,6 +296,9 @@ INJECTION ALERT `system/message` on echo).
 
 ## Changelog
 
+- **v0.2.1** — Marketplace listing metadata: add `dsh-plugin` /
+  `deepseek-harness` keywords, declare `dsh.catalog` (category `tool`, bilingual
+  summary, capabilities), and add a star request to the README. No behavior change.
 - **v0.2.0** — Auto-wire the L3b canary echo-back watchdog in-plugin via
   `ctx.on("session/event")` (correcting the v0.1.0 "no per-reply hook" mistake);
   append an INJECTION ALERT `system/message` on leak; add `watchCanaryEcho` config;

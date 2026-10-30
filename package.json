@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-agent-web-sandbox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Personal agent web-browsing sandbox for DeepSeek Harness: sanitizes fetched web content (hidden text, offsite images, inline base64) and scans third-party pages for prompt-injection attempts. A DSH desktop plugin.",
   "keywords": [
     "dsh-plugin",
