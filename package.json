@@ -2,6 +2,13 @@
   "name": "@deepseek-ai/dsh-agent-web-sandbox",
   "version": "0.2.0",
   "description": "Personal agent web-browsing sandbox for DeepSeek Harness: sanitizes fetched web content (hidden text, offsite images, inline base64) and scans third-party pages for prompt-injection attempts. A DSH desktop plugin.",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "prompt-injection",
+    "web-sanitizer",
+    "agent-security"
+  ],
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -19,6 +26,18 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "catalog": {
+      "category": "tool",
+      "summary": {
+        "en": "Sanitizes fetched web pages and scans them for prompt injection before the model sees them, with a canary echo-back watchdog.",
+        "zh": "在内容进入模型之前净化抓取的网页并扫描提示注入，带金丝雀回声看门狗。"
+      },
+      "capabilities": [
+        "tools",
+        "web",
+        "systemPrompt"
+      ]
     }
   },
   "scripts": {

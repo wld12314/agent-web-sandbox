@@ -27,6 +27,10 @@ reuses the DSH runtime the agent already runs in.
 > detect→react loop closes with no desktop-client glue. It is still a personal,
 > local-first **content** safety layer — not an execution sandbox (see defects).
 
+> **If this plugin saves you from a prompt-injection headache, a ⭐ star helps
+> other people find it.**
+> **如果它帮你挡掉过一次提示注入，点个 ⭐ star，能让更多人找到它。**
+
 ---
 
 ## What it does (trust layers)
