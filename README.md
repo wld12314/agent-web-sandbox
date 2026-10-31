@@ -20,7 +20,7 @@ pulls untrusted content from the open internet — the web fetcher — so that:
 Designed for **local-first, personal use** — no cloud, no extra sandbox vendor,
 reuses the DSH runtime the agent already runs in.
 
-> **Status — v0.2.1 (now wired end-to-end).** v0.1.0 shipped the sanitizer and
+> **Status — v0.2.2 (installable).** v0.1.0 shipped the sanitizer and
 > scanner as a tool but left the L3b canary-watchdog as un-mounted library code,
 > claiming DSH offered no per-reply hook. v0.2.0 corrects that: the watchdog is
 > **auto-wired in-plugin** via the real `ctx.on("session/event")` hook, so the
@@ -52,8 +52,13 @@ reuses the DSH runtime the agent already runs in.
 ## Install (DSH desktop)
 
 The plugin is a standard DSH **bundle**. `dsh plugin install` runs a real
-`pnpm` install in your profile, so the declared dependencies (`@deepseek-ai/dsh-tools`,
-`@deepseek-ai/schemastery`) resolve automatically on your machine.
+`pnpm` install in your profile.
+
+The official `@deepseek-ai/*` packages are declared as **`peerDependencies`, not
+`dependencies`** — your DSH install already ships them (`cordis` 4.0.5,
+`dsh-tools` 0.2.1-rc.3, `schemastery` 3.18.5), and installing a second copy is how
+you get two `defineTool` registries that cannot see each other. The plugin itself
+has **zero runtime dependencies**.
 
 Clone / copy this folder anywhere, then point `dsh plugin install` at its
 absolute path:
@@ -221,7 +226,7 @@ INJECTION ALERT `system/message` on echo).
 | 7 | Configurable layers / caps (`enabled`, `maxOutputChars`, `fetchTimeoutMs`, toggles) | ✅ works, tested |
 | 8 | 40 automated unit tests (26 sanitize + 14 watchdog) + syntax check | ✅ all pass |
 
-## Known defects & limitations (v0.2.0)
+## Known defects & limitations (v0.2.2)
 
 > This is an honest list; the project is still a **content** safety layer, not an
 > execution sandbox. Everything below is a real gap, not a disclaimer.
@@ -238,11 +243,15 @@ INJECTION ALERT `system/message` on echo).
    **auto-wired in-plugin** (`watchCanaryEcho`, default `true`). The library form
    is retained for standalone use.
 3. **Plugin registration is unverified on a live host.** `lib/index.js` needs
-   `@deepseek-ai/dsh-tools`, `schemastery`, and `cordis` — none are installed in
-   this authoring checkout (DSH ships as a packed `asar`). Syntax and pure logic
-   are verified with the bundled Node, but **only `dsh plugin install <abs path>`
-   on your machine proves registration**, and whether `web_fetch_safe` actually
-   appears in the agent's tool list is not yet exercised here.
+   `@deepseek-ai/dsh-tools`, `schemastery`, and `cordis`; none are installed in
+   this authoring checkout (DSH ships as a packed `asar`). Their versions are
+   known — read out of the installed asar manifest as `cordis` 4.0.5,
+   `dsh-tools` 0.2.1-rc.3, `schemastery` 3.18.5 — and the `peerDependencies`
+   ranges in `package.json` are checked against exactly those. Syntax and pure
+   logic are verified with the bundled Node (40 tests pass), but **only
+   `dsh plugin install <abs path>` on your machine proves registration**, and
+   whether `web_fetch_safe` actually appears in the agent's tool list is not yet
+   exercised here.
 4. **L3 is heuristic and conservative.** It flags; it does not delete. It can
    both miss obfuscated instructions and false-positive on legitimate imperative
    prose ("send the email now" in a normal article would trip it). A local
@@ -296,6 +305,13 @@ INJECTION ALERT `system/message` on echo).
 
 ## Changelog
 
+- **v0.2.2** — Fix a broken install. `dependencies` pinned
+  `@deepseek-ai/schemastery: 0.2.1-rc.3`, a version that **does not exist on npm**
+  (schemastery is versioned 3.x), so any `dsh plugin install` would fail to
+  resolve. Both official packages now move to `peerDependencies` matching what
+  DSH actually ships — `dsh-tools@^0.2.0-rc.1 || ^0.2.1-rc.1`,
+  `schemastery@^3.18.1` — leaving the plugin with **zero runtime dependencies**.
+  No behavior change.
 - **v0.2.1** — Marketplace listing metadata: add `dsh-plugin` /
   `deepseek-harness` keywords, declare `dsh.catalog` (category `tool`, bilingual
   summary, capabilities), and add a star request to the README. No behavior change.

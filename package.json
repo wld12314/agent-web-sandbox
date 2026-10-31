@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-agent-web-sandbox",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Personal agent web-browsing sandbox for DeepSeek Harness: sanitizes fetched web content (hidden text, offsite images, inline base64) and scans third-party pages for prompt-injection attempts. A DSH desktop plugin.",
   "keywords": [
     "dsh-plugin",
@@ -45,11 +45,9 @@
     "check": "node --check lib/index.js && node --check lib/sanitize.js && node --check lib/canary-watch.js"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.5"
-  },
-  "dependencies": {
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
-    "@deepseek-ai/schemastery": "0.2.1-rc.3"
+    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/dsh-tools": "^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/schemastery": "^3.18.1"
   },
   "engines": {
     "node": ">=20"
