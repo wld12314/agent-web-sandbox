@@ -20,11 +20,13 @@ pulls untrusted content from the open internet — the web fetcher — so that:
 Designed for **local-first, personal use** — no cloud, no extra sandbox vendor,
 reuses the DSH runtime the agent already runs in.
 
-> **Status — v0.2.2 (installable).** v0.1.0 shipped the sanitizer and
+> **Status — v0.2.3 (loads and runs).** v0.1.0 shipped the sanitizer and
 > scanner as a tool but left the L3b canary-watchdog as un-mounted library code,
 > claiming DSH offered no per-reply hook. v0.2.0 corrects that: the watchdog is
 > **auto-wired in-plugin** via the real `ctx.on("session/event")` hook, so the
-> detect→react loop closes with no desktop-client glue. It is still a personal,
+> detect→react loop closes with no desktop-client glue. v0.2.3 fixes the
+> registration bug that kept `apply()` from ever completing (see defects), so
+> this is the first release whose tool actually mounts. It is still a personal,
 > local-first **content** safety layer — not an execution sandbox (see defects).
 
 > **If this plugin saves you from a prompt-injection headache, a ⭐ star helps
@@ -194,6 +196,7 @@ with plain Node:
 ```bash
 node agent-web-sandbox/_test_sanitize.mjs
 node agent-web-sandbox/_test_canary_watch.mjs
+node agent-web-sandbox/_test_apply.mjs
 ```
 
 `_test_sanitize.mjs` (26/26) covers: hidden-text removal (`display:none` /
@@ -207,6 +210,17 @@ canary learning from `tool/result`, echo detection, idempotent `seq` handling,
 the `onLeak` callback, out-of-order `observeSession` sorting, and the in-plugin
 auto-wire contract (subscribes to `session/event`, learns canary, appends an
 INJECTION ALERT `system/message` on echo).
+
+`_test_apply.mjs` (24/24, 3 of them without any host packages) covers the
+**load path** the two pure suites cannot see: it scans the source for a
+`required: false` schema literal (`dsh-tools` rejects it at compile time), then
+builds a `ctx` stub and asserts that `apply()` resolves, registers exactly one
+`web_fetch_safe` tool, adds the system-prompt section, wires the
+`session/event` watchdog, registers a `dispose` handler, leaves the plain
+`web_fetch` guard off by default, installs it under `disablePlainWebFetch`, and
+is a clean no-op under `enabled: false`. Run it inside an installed profile for
+the full set; outside one it reports the three source checks and skips the rest,
+because the host supplies the peer dependencies.
 
 > Note: the other smoke files (`_smoke.mjs`, `_smoke2.mjs`, `_pure.mjs`) were
 > earlier throwaway probes; the `_test_*.mjs` files are the authoritative tests.
@@ -242,16 +256,19 @@ INJECTION ALERT `system/message` on echo).
    `ctx.on("session/event", …)` for every session event, so the watchdog is now
    **auto-wired in-plugin** (`watchCanaryEcho`, default `true`). The library form
    is retained for standalone use.
-3. **Plugin registration is unverified on a live host.** `lib/index.js` needs
-   `@deepseek-ai/dsh-tools`, `schemastery`, and `cordis`; none are installed in
-   this authoring checkout (DSH ships as a packed `asar`). Their versions are
-   known — read out of the installed asar manifest as `cordis` 4.0.5,
-   `dsh-tools` 0.2.1-rc.3, `schemastery` 3.18.5 — and the `peerDependencies`
-   ranges in `package.json` are checked against exactly those. Syntax and pure
-   logic are verified with the bundled Node (40 tests pass), but **only
-   `dsh plugin install <abs path>` on your machine proves registration**, and
-   whether `web_fetch_safe` actually appears in the agent's tool list is not yet
-   exercised here.
+3. **(Closed in v0.2.3 — formerly "plugin registration is unverified".)** The
+   manifest once pinned `@deepseek-ai/schemastery` to `0.2.1-rc.3`, a version that
+   does not exist on npm (schemastery is 3.x), so every install since v0.1.0 failed
+   dependency resolution before the plugin loaded. Even with that fixed, `apply()`
+   threw on registration: the tool's `output.schema` used `required: false` in two
+   places, and `dsh-tools` rejects that outright (`schema.properties.injectionScan.
+   required must be true when present`) — the key must be absent or literally
+   `true`. Both are fixed and verified end-to-end: `dsh plugin add` resolves into a
+   clean profile (exit 0, one package, composed into the dump-config tree), and
+   `apply()` now resolves and registers `web_fetch_safe` against the host's real
+   `dsh-tools` 0.2.1-rc.3. `_test_apply.mjs` guards the regression. What is still
+   not exercised here: whether the host routes a real model turn to the tool and
+   whether the canary alert lands in the loop's next turn (defect 8).
 4. **L3 is heuristic and conservative.** It flags; it does not delete. It can
    both miss obfuscated instructions and false-positive on legitimate imperative
    prose ("send the email now" in a normal article would trip it). A local
@@ -305,6 +322,14 @@ INJECTION ALERT `system/message` on echo).
 
 ## Changelog
 
+- **v0.2.3** — Fix the load bug: `apply()` threw on every registration because the
+  tool's `output.schema` set `required: false` twice, which `dsh-tools` rejects
+  (`schema.properties.injectionScan.required must be true when present` — the key
+  must be absent or literally `true`). The key is simply omitted now; the fields
+  were already optional. Add `_test_apply.mjs`, which scans the source for that
+  literal and then calls `apply()` against a `ctx` stub, so the failure that 40
+  passing pure tests could not see is now covered; `npm test` runs it. No behavior
+  change beyond the plugin now actually mounting.
 - **v0.2.2** — Fix a broken install. `dependencies` pinned
   `@deepseek-ai/schemastery: 0.2.1-rc.3`, a version that **does not exist on npm**
   (schemastery is versioned 3.x), so any `dsh plugin install` would fail to
